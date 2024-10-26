@@ -1,9 +1,6 @@
-﻿using Microsoft.VisualBasic;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using MicroURLCore.ShortIdGenerators;
 using MicroURLCore;
-using System.Threading.Tasks;
+using MicroURLData;
 using System.Text;
 
 namespace MicroURL {
@@ -11,11 +8,11 @@ namespace MicroURL {
     /// State Machine to interact with user.
     /// </summary>
     internal class UserInterface {
-        private enum State { Login, Main, CreateShort, SetShort, DelShort, DelAll, PrintAll, LongFromShort, Logout, Exit }
+        private enum State { Login, Main, CreateShort, SetShort, DelShort, DelAll, PrintAll, LongFromShort, Stat, Logout, Exit }
         private readonly Dictionary<State, Action> StateActions = new();
-        private HashSet<char> allowedSymbols = new HashSet<char>() { '$', '-', '_', '.', '+', '!', '*', '’', '(', ')', ',', '.' };
         private State CurrentState { get; set; }
         private MicroURLService MicroURLService { get; set; }
+        private MicroUrlServiceConfig MicroUrlServiceConfig { get; set; }
         private string Message {
             get {
                 string cur = prevMessage;
@@ -36,9 +33,10 @@ namespace MicroURL {
             StateActions[State.DelAll] = DeleteShortUrlsByLong;
             StateActions[State.PrintAll] = PrintAllShortUrlsByLong;
             StateActions[State.LongFromShort] = GetLongFromShort;
+            StateActions[State.Stat] = PrintStatisticByUrl;
         }
 
-        internal void Interact() {
+        internal void Run() {
             while (CurrentState != State.Exit) {
                 StateActions[CurrentState]();
             }
@@ -54,8 +52,9 @@ namespace MicroURL {
                 CurrentState = State.Login;
                 return;
             }
-            MicroURLService = new MicroURLService(userName);
-            Message = $"Login for user {MicroURLService.CurrentUser} successful";
+            MicroUrlServiceConfig = new("https://hire.me/", userName, new DbContext(), new RandomBasedGenerator(7), new ExternalStatisticsService());
+            MicroURLService = new MicroURLService(MicroUrlServiceConfig);
+            Message = $"Login for user {MicroUrlServiceConfig.User} successful";
             CurrentState = State.Main;
         }
 
@@ -63,7 +62,7 @@ namespace MicroURL {
             Console.Clear();
             Console.WriteLine(Message);
             Console.WriteLine();
-            Console.WriteLine($"Welcome {MicroURLService.CurrentUser} to MicroURL service. Place which respect short url. Please, chouse action.");
+            Console.WriteLine($"Welcome {MicroUrlServiceConfig.User} to MicroURL service. Place, which respect short urls. Please, choose action:");
             Console.WriteLine();
             Console.WriteLine("1. Create short URL.");
             Console.WriteLine("2. Set custom short URL.");
@@ -71,8 +70,9 @@ namespace MicroURL {
             Console.WriteLine("4. Delete all short URLs.");
             Console.WriteLine("5. Print all short URLs.");
             Console.WriteLine("6. Get original long URL from short one.");
-            Console.WriteLine("7. Logout.");
-            Console.WriteLine("8. Exit.");
+            Console.WriteLine("7. Get Statistics by URL");
+            Console.WriteLine("8. Logout.");
+            Console.WriteLine("9. Exit.");
             var userInput = Console.ReadLine();
             if (!int.TryParse(userInput, out int option)) {
                 Message = $"Unsuported action [{userInput}]";
@@ -99,10 +99,13 @@ namespace MicroURL {
                     CurrentState = State.LongFromShort;
                     return;
                 case 7:
+                    CurrentState = State.Stat;
+                    return;
+                case 8:
                     CurrentState = State.Login;
                     MicroURLService.Dispose();
                     return;
-                case 8:
+                case 9:
                     CurrentState = State.Exit;
                     return;
                 default:
@@ -141,30 +144,20 @@ namespace MicroURL {
             Console.Clear();
             Console.WriteLine(Message);
             Console.WriteLine();
-            Console.WriteLine($"Enter your {MicroURLService.DomainName}[DesiredID]");
+            Console.WriteLine($"Enter your {MicroUrlServiceConfig.Domain}[DesiredID]");
             string? shortId = Console.ReadLine();
-            if (IsInvalid(shortId)) {
-                Message = "unsuported short ID. Please enter enother one.";
+            if (!MicroURLService.IsValid(shortId)) {
+                Message = "unsuported short ID. Please enter another one.";
                 CurrentState = State.SetShort;
                 return;
             }
-            if (!MicroURLService.SetShortURL(longUrl, shortId)) {
-                Message = "Looks like short ID already exist. Please enter enother one.";
+            if (!MicroURLService.TrySetShortURL(longUrl, shortId)) {
+                Message = "Looks like short ID already exist. Please enter another one.";
                 CurrentState = State.SetShort;
                 return;
             }
-            Message = $"Short url {MicroURLService.DomainName}{shortId} created. Please, try it out.";
+            Message = $"Short url {MicroUrlServiceConfig.Domain}{shortId} created. Please, try it out.";
             CurrentState = State.Main;
-        }
-
-        private bool IsInvalid(string? shortId) {
-            if (string.IsNullOrWhiteSpace(shortId) || shortId.Length < 3 || shortId.Length > 12)
-                return true;
-            foreach (char c in shortId) {
-                if (!char.IsLetterOrDigit(c) && !allowedSymbols.Contains(c))
-                    return true;
-            }
-            return false;
         }
 
         private void DeleteShortUrl() {
@@ -178,7 +171,7 @@ namespace MicroURL {
                 CurrentState = State.Main;
                 return;
             }
-            shortId = shortId.Trim().Replace(MicroURLService.DomainName, "");
+            shortId = shortId.Trim().Replace(MicroUrlServiceConfig.Domain, "");
             if (string.IsNullOrWhiteSpace(shortId)) {
                 Message = "Empty ID is invalid";
                 CurrentState = State.Main;
@@ -234,19 +227,23 @@ namespace MicroURL {
             Console.WriteLine();
             Console.WriteLine("Enter your short url");
             string? shortId = Console.ReadLine();
-            if (string.IsNullOrWhiteSpace(shortId)) {
-                Message = "Empty ID is invalid";
-                CurrentState = State.Main;
-                return;
-            }
-            shortId = shortId.Trim().Replace(MicroURLService.DomainName, "");
-            if (string.IsNullOrWhiteSpace(shortId)) {
-                Message = "Empty ID is invalid";
-                CurrentState = State.Main;
-                return;
-            }
             Message = MicroURLService.GetLongFromShortURL(shortId);
             CurrentState = State.Main;
         }
+
+        private void PrintStatisticByUrl() {
+            Console.Clear();
+            Console.WriteLine(Message);
+            Console.WriteLine();
+            Console.WriteLine("Enter your url to get Statistic:");
+            string? url = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(url)) {
+                Message = "URL need to be longer";
+                CurrentState = State.Main;
+                return;
+            }
+            Message = $"{url}: {MicroURLService.GetStatistics(url)}";
+            CurrentState = State.Main;
+        }
     }
-}
+} 

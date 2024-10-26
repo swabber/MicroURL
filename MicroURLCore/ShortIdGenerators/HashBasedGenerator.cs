@@ -1,16 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 using System.Security.Cryptography;
-using System.Drawing;
 
-namespace MicroURLCore {
+namespace MicroURLCore.ShortIdGenerators {
     /// <summary>
-    /// Generator which return part of the hash, and if repetedly ask for hash for the same url, 
+    /// Generator which return part of the hash, and if repeatedly ask for hash for the same url, 
     /// it will return substring of same hash, but moved by 1.
     /// </summary>
-    internal class HashBasedGenerator : ShortIdGenerator {
+    public class HashBasedGenerator : ShortIdGenerator {
         private string LongUrl;
         private string Hash;
         private int Start;
@@ -31,7 +27,8 @@ namespace MicroURLCore {
                 foreach (byte b in bytes) {
                     builder.Append(b.ToString("x2"));
                 }
-                return builder.ToString();
+                Hash = builder.ToString();
+                return Hash;
             }
         }
     }

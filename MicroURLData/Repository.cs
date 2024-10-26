@@ -3,7 +3,7 @@
 namespace MicroURLData {
     public abstract class Repository<TEntity> : IRepository<TEntity> where TEntity : class {
         protected readonly List<TEntity> Context;
-        protected Repository(MyBbContext context)
+        protected Repository(DbContext context)
         {
             Context = (List<TEntity>)context.GetDefault(GetType(), new List<TEntity>());
         }
